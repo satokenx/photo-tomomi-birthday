@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 const BUCKET = 'tomomi-photos';
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 type PhotoRow = {
 	id: string;
@@ -63,8 +63,11 @@ export default function PhotoGrid() {
 		return q;
 	}, [appliedSearch, sort]);
 
-	const fetchPage = useCallback(async (initial = false) => {
+	const fetchPage = useCallback(async (initial = false): Promise<number> => {
 		try {
+			// 二重実行防止
+			if ((fetchPage as any)._busy) return 0;
+			(fetchPage as any)._busy = true;
 			if (initial) {
 				setLoading(true);
 			} else {
@@ -75,34 +78,47 @@ export default function PhotoGrid() {
 			// 初回のみ count=exact、以降はcountなしで軽量化
 			const { data, error, count } = await baseQuery(initial).range(from, to);
 			if (error) throw error;
+			const fetched = data?.length ?? 0;
 			if (initial) {
+				const totalCount = count ?? fetched;
 				setRows(data || []);
-				setOffset((data?.length ?? 0));
-				setHasMore((data?.length ?? 0) === PAGE_SIZE);
-				setTotal(count ?? (data?.length ?? 0));
+				setOffset(fetched);
+				setTotal(totalCount);
+				setHasMore(fetched > 0 && fetched < totalCount);
 			} else {
-				setRows(prev => [...prev, ...(data || [])]);
-				const fetched = data?.length ?? 0;
-				setOffset(prev => prev + fetched);
-				if (fetched < PAGE_SIZE) setHasMore(false);
+				if (fetched === 0) {
+					setHasMore(false);
+				} else {
+					const nextOffset = offset + fetched;
+					setRows(prev => [...prev, ...(data || [])]);
+					setOffset(nextOffset);
+					setHasMore((total != null) ? (nextOffset < total) : (fetched === PAGE_SIZE));
+				}
 			}
+			return fetched;
 		} catch (e: any) {
 			setError(e?.message ?? 'Unknown error');
+			return 0;
 		} finally {
 			setLoading(false);
 			setLoadingMore(false);
+			(fetchPage as any)._busy = false;
 		}
-	}, [offset, baseQuery]);
+	}, [offset, baseQuery, total]);
 
-	// Initial and when filter changes
+	// 初期表示と、フィルタ/ソート変更時のみ先頭から再取得（offset変更では走らせない）
 	useEffect(() => {
 		let active = true;
 		(async () => {
 			if (!active) return;
+			setRows([]);
+			setOffset(0);
+			setHasMore(true);
+			setTotal(null);
 			await fetchPage(true);
 		})();
 		return () => { active = false; };
-	}, [fetchPage]);
+	}, [appliedSearch, sort]);
 
 	// Fetch distinct uploader options (client-side distinct)
 	useEffect(() => {
@@ -129,19 +145,7 @@ export default function PhotoGrid() {
 		return () => { active = false; };
 	}, []);
 
-	// Infinite scroll
-	useEffect(() => {
-		if (!sentinelRef.current) return;
-		const el = sentinelRef.current;
-		const obs = new IntersectionObserver((entries) => {
-			const first = entries[0];
-			if (first.isIntersecting && hasMore && !loading && !loadingMore) {
-				fetchPage(false);
-			}
-		}, { rootMargin: '200px 0px' });
-		obs.observe(el);
-		return () => obs.disconnect();
-	}, [fetchPage, hasMore, loading, loadingMore]);
+	// 無限スクロールは使用しない（明示ボタンでロード）
 
 	const onApplySearch = (e: React.FormEvent) => {
 		e.preventDefault();
@@ -212,6 +216,10 @@ export default function PhotoGrid() {
 		}
 	};
 
+	const onLoadMore = async () => {
+		await fetchPage(false);
+	};
+
 	const onDelete = async (row: PhotoRow) => {
 		if (!userId || userId !== row.uploader_id) return;
 		if (!confirm('この写真を削除しますか？')) return;
@@ -253,7 +261,7 @@ export default function PhotoGrid() {
 		<div style={{ display: 'grid', gap: 8 }}>
 			<div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
 				<strong>写真一覧</strong>
-				<span className="muted">{total ?? rows.length} 枚</span>
+				<span className="muted">{rows.length} / {total ?? rows.length} 枚</span>
 			</div>
 			<form onSubmit={onApplySearch} className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
 				<select
@@ -337,8 +345,13 @@ export default function PhotoGrid() {
 					})}
 				</div>
 			)}
-			<div ref={sentinelRef} />
-			{loadingMore && <div className="muted">読み込み中...</div>}
+			{hasMore && (
+				<div className="row" style={{ justifyContent: 'center', marginTop: 8 }}>
+					<button className="btn" type="button" onClick={onLoadMore} disabled={loadingMore}>
+						{loadingMore ? '読み込み中...' : 'さらに表示'}
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }
