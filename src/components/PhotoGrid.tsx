@@ -29,6 +29,7 @@ export default function PhotoGrid() {
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 	const [uploaderOptions, setUploaderOptions] = useState<string[]>([]);
 	const [optionsLoading, setOptionsLoading] = useState<boolean>(true);
+	const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
 	useEffect(() => {
 		let mounted = true;
@@ -168,20 +169,37 @@ export default function PhotoGrid() {
 	const onDelete = async (row: PhotoRow) => {
 		if (!userId || userId !== row.uploader_id) return;
 		if (!confirm('この写真を削除しますか？')) return;
+		setDeletingIds(prev => new Set(prev).add(row.id));
 		// delete storage object first
 		const { error: sErr } = await supabase.storage.from(BUCKET).remove([row.path]);
-		if (sErr) {
+		// 許容: 404 は既に削除済み
+		if (sErr && sErr.status !== 404) {
 			alert(`ストレージ削除に失敗: ${sErr.message}`);
+			setDeletingIds(prev => {
+				const n = new Set(prev);
+				n.delete(row.id);
+				return n;
+			});
 			return;
 		}
 		// then delete db row
 		const { error: dErr } = await supabase.from('photos').delete().eq('id', row.id);
 		if (dErr) {
 			alert(`DB削除に失敗: ${dErr.message}`);
+			setDeletingIds(prev => {
+				const n = new Set(prev);
+				n.delete(row.id);
+				return n;
+			});
 			return;
 		}
 		setRows(prev => prev.filter(r => r.id !== row.id));
 		setTotal(prev => (prev ?? 1) - 1);
+		setDeletingIds(prev => {
+			const n = new Set(prev);
+			n.delete(row.id);
+			return n;
+		});
 	};
 
 	if (loading && rows.length === 0) return <div className="muted">読み込み中...</div>;
@@ -236,7 +254,14 @@ export default function PhotoGrid() {
 									</div>
 									{canDelete && (
 										<div className="row" style={{ justifyContent: 'flex-end' }}>
-											<button className="btn" onClick={() => onDelete(row)}>削除</button>
+											<button
+												type="button"
+												className="btn"
+												onClick={() => onDelete(row)}
+												disabled={deletingIds.has(row.id)}
+											>
+												{deletingIds.has(row.id) ? '削除中...' : '削除'}
+											</button>
 										</div>
 									)}
 								</figcaption>

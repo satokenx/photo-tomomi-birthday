@@ -80,6 +80,12 @@ export default function UploadForm() {
 			);
 			setFiles([]);
 			setMessage(`アップロード完了: ${results.length} 件`);
+			// 反映のため軽く待ってからリロード
+			setTimeout(() => {
+				if (typeof window !== 'undefined') {
+					window.location.reload();
+				}
+			}, 500);
 		} catch (e: any) {
 			setMessage(`アップロードに失敗しました: ${e?.message ?? 'Unknown error'}`);
 		} finally {

@@ -55,7 +55,7 @@ export default function AuthButtons({ compact = false }: AuthButtonsProps) {
 	}
 
 	return (
-		<button className="btn btn-primary" onClick={signIn} disabled={loading}>
+		<button className="btn btn-primary btn-sm" onClick={signIn} disabled={loading}>
 			{loading ? 'リダイレクト中...' : 'Googleでサインイン'}
 		</button>
 	);

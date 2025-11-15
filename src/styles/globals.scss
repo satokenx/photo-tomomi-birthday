@@ -133,8 +133,39 @@ a {
 	opacity: 0.96;
 }
 
+.btn-sm {
+	font-size: 12px;
+	padding: 4px 10px;
+	line-height: 1.1;
+}
+
 input[type="file"] {
 	accent-color: var(--primary);
+}
+
+/* Disabled buttons look gray and non-interactive */
+.btn:disabled,
+.btn[disabled] {
+	background: #eeeeee;
+	color: #9aa0a6;
+	border-color: #e0e0e0;
+	box-shadow: none;
+	transform: none;
+	cursor: not-allowed;
+	opacity: 1; /* keep readable */
+}
+.btn:disabled:hover,
+.btn[disabled]:hover {
+	background: #eeeeee;
+	border-color: #e0e0e0;
+	transform: none;
+}
+.btn.btn-primary:disabled,
+.btn.btn-primary[disabled] {
+	background: #e0e0e0;
+	color: #9aa0a6;
+	border-color: #e0e0e0;
+	box-shadow: none;
 }
 
 /* Make "Choose Files" look like a primary button */
