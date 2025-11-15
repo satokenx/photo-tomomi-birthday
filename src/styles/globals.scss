@@ -1,0 +1,256 @@
+:root {
+	/* Light theme with wine-red accents */
+	--bg: #fff5f7;
+	--fg: #1a1a1a;
+	--muted: #6b6f76;
+	--primary: #8a1538;
+	--primary-2: #e04f6a;
+	--surface: #ffffff;
+	--border: rgba(0, 0, 0, 0.08);
+	--shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	padding: 0;
+	margin: 0;
+	background:
+		radial-gradient(900px 600px at -15% -10%, rgba(224, 79, 106, 0.10), transparent 60%),
+		radial-gradient(900px 600px at 115% 10%, rgba(138, 21, 56, 0.08), transparent 60%),
+		var(--bg);
+	color: var(--fg);
+	font-size: 14px;
+	font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+		"Apple Color Emoji", "Segoe UI Emoji";
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.container {
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 16px 14px 56px;
+}
+
+.title {
+	font-size: 24px;
+	font-weight: 700;
+	letter-spacing: 0.3px;
+	margin: 6px 0 12px;
+	color: var(--primary);
+	text-align: center;
+}
+
+.hero {
+	width: 100%;
+	height: auto;
+	aspect-ratio: 1 / 1; /* モバイルはスクエア */
+	border-radius: 12px;
+	border: 1px solid var(--border);
+	position: relative;
+	overflow: hidden;
+	background:
+		linear-gradient(135deg, rgba(138, 21, 56, 0.22), rgba(224, 79, 106, 0.18)),
+		radial-gradient(900px 500px at 85% -150px, rgba(224, 79, 106, 0.22), transparent 60%),
+		radial-gradient(800px 500px at -150px 75%, rgba(138, 21, 56, 0.20), transparent 60%),
+		url('/hero.jpg') center/cover no-repeat;
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+		var(--shadow);
+}
+
+.hero-video {
+	display: block;
+	width: 100%;
+	height: auto;
+	aspect-ratio: 1 / 1; /* スマホはスクエア */
+	object-fit: contain; /* 全体を表示（上下左右が切れない） */
+	pointer-events: none; /* クリックでプレイヤーUIを出さない */
+	background: transparent;
+}
+
+.hero-video::-webkit-media-controls {
+	display: none !important;
+}
+
+.section {
+	margin-top: 18px;
+}
+
+.card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 16px;
+	box-shadow: var(--shadow);
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.row {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+}
+
+.btn {
+	background: #fff5f7;
+	color: var(--primary);
+	border: 1px solid rgba(138, 21, 56, 0.22);
+	border-radius: 8px;
+	padding: 6px 12px; /* smaller vertical height */
+	font-size: 13px;
+	line-height: 1.2;
+	font-weight: 600;
+	cursor: pointer;
+	transition: 120ms ease background, 120ms ease transform, 120ms ease border-color;
+}
+.btn:hover {
+	background: #ffe8ee;
+	border-color: rgba(138, 21, 56, 0.35);
+	transform: translateY(-1px);
+}
+.btn-primary {
+	background: linear-gradient(90deg, var(--primary), var(--primary-2));
+	border-color: transparent;
+	color: #ffffff;
+	box-shadow: 0 6px 18px rgba(138, 21, 56, 0.25);
+}
+.btn-primary:hover {
+	opacity: 0.96;
+}
+
+input[type="file"] {
+	accent-color: var(--primary);
+}
+
+/* Make "Choose Files" look like a primary button */
+input[type="file"]::file-selector-button {
+	background: linear-gradient(90deg, var(--primary), var(--primary-2));
+	color: #ffffff;
+	border: none;
+	border-radius: 8px;
+	padding: 6px 12px;
+	font-weight: 700;
+	font-size: 13px;
+	box-shadow: 0 6px 18px rgba(138, 21, 56, 0.25);
+	cursor: pointer;
+	transition: 120ms ease opacity, 120ms ease transform;
+	margin-right: 10px;
+}
+input[type="file"]::file-selector-button:hover {
+	opacity: 0.96;
+	transform: translateY(-1px);
+}
+/* Safari */
+input[type="file"]::-webkit-file-upload-button {
+	background: linear-gradient(90deg, var(--primary), var(--primary-2));
+	color: #ffffff;
+	border: none;
+	border-radius: 8px;
+	padding: 6px 12px;
+	font-weight: 700;
+	font-size: 13px;
+	box-shadow: 0 6px 18px rgba(138, 21, 56, 0.25);
+	cursor: pointer;
+	transition: 120ms ease opacity, 120ms ease transform;
+	margin-right: 10px;
+}
+input[type="file"]::-webkit-file-upload-button:hover {
+	opacity: 0.96;
+	transform: translateY(-1px);
+}
+
+.grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 10px;
+	margin-top: 12px;
+}
+@media (min-width: 480px) {
+	.grid {
+		grid-template-columns: repeat(3, 1fr);
+	}
+}
+@media (min-width: 768px) {
+	.grid {
+		grid-template-columns: repeat(4, 1fr);
+	}
+}
+.photo {
+	margin: 0;
+	background: #ffffff;
+	border: 1px solid rgba(138, 21, 56, 0.12);
+	border-radius: 10px;
+	overflow: hidden;
+	box-shadow: var(--shadow);
+}
+.photo img {
+	width: 100%;
+	height: 140px;
+	object-fit: cover;
+	display: block;
+}
+.photo:hover {
+	border-color: rgba(224, 79, 106, 0.4);
+	box-shadow: 0 10px 24px rgba(224, 79, 106, 0.18);
+	transform: translateY(-1px);
+	transition: 160ms ease transform, 160ms ease box-shadow, 160ms ease border-color;
+}
+@media (min-width: 768px) {
+	.photo img {
+		height: 180px;
+	}
+}
+.photo figcaption {
+	padding: 8px 10px;
+}
+.photo-meta {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	font-size: 11px;
+	color: var(--muted);
+}
+.photo-meta .uploader {
+	font-weight: 600;
+	color: #2a2a2a;
+}
+.photo-meta .date {
+	opacity: 0.85;
+}
+
+/* Larger screens: gently scale up typography and hero height */
+@media (min-width: 768px) {
+	.title {
+		font-size: 28px;
+	}
+	.hero {
+		aspect-ratio: 16 / 9; /* タブレット以上はワイド */
+	}
+	.hero-video {
+		aspect-ratio: 16 / 9;
+	}
+	.container {
+		padding: 20px 16px 64px;
+	}
+	body {
+		font-size: 15px;
+	}
+}
+
+
