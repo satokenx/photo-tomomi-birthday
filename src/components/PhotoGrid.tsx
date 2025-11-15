@@ -30,6 +30,8 @@ export default function PhotoGrid() {
 	const [uploaderOptions, setUploaderOptions] = useState<string[]>([]);
 	const [optionsLoading, setOptionsLoading] = useState<boolean>(true);
 	const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [bulkDeleting, setBulkDeleting] = useState(false);
 
 	useEffect(() => {
 		let mounted = true;
@@ -166,23 +168,53 @@ export default function PhotoGrid() {
 		setHasMore(true);
 	};
 
+	const toggleSelect = (row: PhotoRow) => {
+		if (!userId || userId !== row.uploader_id) return;
+		setSelectedIds(prev => {
+			const n = new Set(prev);
+			if (n.has(row.id)) n.delete(row.id);
+			else n.add(row.id);
+			return n;
+		});
+	};
+
+	const bulkDelete = async () => {
+		if (selectedIds.size === 0) return;
+		const targets = rows.filter(r => selectedIds.has(r.id) && r.uploader_id === userId);
+		if (targets.length === 0) return;
+		if (!confirm(`選択した ${targets.length} 件を削除しますか？`)) return;
+		setBulkDeleting(true);
+		try {
+			// 1) DBを先に削除（確実に一覧から消す）
+			const ids = targets.map(t => t.id);
+			const { error: dErr } = await supabase.from('photos').delete().in('id', ids);
+			if (dErr) throw dErr;
+			// UIから除去
+			setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
+			setTotal(prev => (prev ?? 0) - targets.length);
+			// 2) ストレージはベストエフォート削除
+			const paths = targets.map(t => t.path);
+			const { error: sErr } = await supabase.storage.from(BUCKET).remove(paths);
+			if (sErr && sErr.status !== 404) {
+				console.warn('Bulk storage delete failed:', sErr.message);
+			}
+			// 3) 先頭から取り直し
+			setSelectedIds(new Set());
+			setOffset(0);
+			setHasMore(true);
+			await fetchPage(true);
+		} catch (e: any) {
+			alert(`一括削除に失敗: ${e?.message ?? 'Unknown error'}`);
+		} finally {
+			setBulkDeleting(false);
+		}
+	};
+
 	const onDelete = async (row: PhotoRow) => {
 		if (!userId || userId !== row.uploader_id) return;
 		if (!confirm('この写真を削除しますか？')) return;
 		setDeletingIds(prev => new Set(prev).add(row.id));
-		// delete storage object first
-		const { error: sErr } = await supabase.storage.from(BUCKET).remove([row.path]);
-		// 許容: 404 は既に削除済み
-		if (sErr && sErr.status !== 404) {
-			alert(`ストレージ削除に失敗: ${sErr.message}`);
-			setDeletingIds(prev => {
-				const n = new Set(prev);
-				n.delete(row.id);
-				return n;
-			});
-			return;
-		}
-		// then delete db row
+		// 1) DBの行を先に削除（確実に一覧から消す）
 		const { error: dErr } = await supabase.from('photos').delete().eq('id', row.id);
 		if (dErr) {
 			alert(`DB削除に失敗: ${dErr.message}`);
@@ -193,8 +225,18 @@ export default function PhotoGrid() {
 			});
 			return;
 		}
+		// UIから即時除去
 		setRows(prev => prev.filter(r => r.id !== row.id));
 		setTotal(prev => (prev ?? 1) - 1);
+		// 2) ストレージはベストエフォートで削除（404は許容）
+		const { error: sErr } = await supabase.storage.from(BUCKET).remove([row.path]);
+		if (sErr && sErr.status !== 404) {
+			console.warn('Storage delete failed:', sErr.message);
+		}
+		// 3) ページング整合を保つために先頭から取り直し
+		setOffset(0);
+		setHasMore(true);
+		await fetchPage(true);
 		setDeletingIds(prev => {
 			const n = new Set(prev);
 			n.delete(row.id);
@@ -232,6 +274,14 @@ export default function PhotoGrid() {
 					<option value="date_desc">日付（新しい順）</option>
 					<option value="date_asc">日付（古い順）</option>
 				</select>
+				<button
+					className="btn"
+					type="button"
+					onClick={bulkDelete}
+					disabled={selectedIds.size === 0 || bulkDeleting}
+				>
+					{bulkDeleting ? '削除中...' : `選択削除 (${selectedIds.size})`}
+				</button>
 				<button className="btn" type="button" onClick={onClearSearch}>条件解除</button>
 			</form>
 			{(rows.length === 0 && !loading) ? (
@@ -245,7 +295,7 @@ export default function PhotoGrid() {
 						const formatted = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 						const canDelete = userId && userId === row.uploader_id;
 						return (
-							<figure key={row.id} className="photo">
+							<figure key={row.id} className="photo" style={{ position: 'relative' }}>
 								<img src={url} alt={row.path} />
 								<figcaption>
 									<div className="photo-meta">
@@ -265,6 +315,21 @@ export default function PhotoGrid() {
 										</div>
 									)}
 								</figcaption>
+								{canDelete && (
+									<input
+										type="checkbox"
+										checked={selectedIds.has(row.id)}
+										onChange={() => toggleSelect(row)}
+										aria-label="この写真を選択"
+										style={{
+											position: 'absolute',
+											top: 6,
+											left: 6,
+											width: 18,
+											height: 18
+										}}
+									/>
+								)}
 							</figure>
 						);
 					})}
