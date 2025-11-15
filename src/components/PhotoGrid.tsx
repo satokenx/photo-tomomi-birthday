@@ -195,7 +195,7 @@ export default function PhotoGrid() {
 			// 2) ストレージはベストエフォート削除
 			const paths = targets.map(t => t.path);
 			const { error: sErr } = await supabase.storage.from(BUCKET).remove(paths);
-			if (sErr && sErr.status !== 404) {
+			if (sErr && (sErr as any).statusCode !== 404) {
 				console.warn('Bulk storage delete failed:', sErr.message);
 			}
 			// 3) 先頭から取り直し
@@ -230,7 +230,7 @@ export default function PhotoGrid() {
 		setTotal(prev => (prev ?? 1) - 1);
 		// 2) ストレージはベストエフォートで削除（404は許容）
 		const { error: sErr } = await supabase.storage.from(BUCKET).remove([row.path]);
-		if (sErr && sErr.status !== 404) {
+		if (sErr && (sErr as any).statusCode !== 404) {
 			console.warn('Storage delete failed:', sErr.message);
 		}
 		// 3) ページング整合を保つために先頭から取り直し
