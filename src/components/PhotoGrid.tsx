@@ -47,10 +47,11 @@ export default function PhotoGrid() {
 		};
 	}, []);
 
-	const baseQuery = useCallback(() => {
+	// includeCount=true のときだけ総件数を取りにいく（初回やフィルタ変更時）
+	const baseQuery = useCallback((includeCount: boolean) => {
 		let q = supabase
 			.from('photos')
-			.select('id, path, uploader_id, uploader_name, uploaded_at', { count: 'exact' });
+			.select('id, path, uploader_id, uploader_name, uploaded_at', includeCount ? { count: 'exact' } as any : {} as any);
 
 		// apply search
 		if (appliedSearch.trim()) {
@@ -71,7 +72,8 @@ export default function PhotoGrid() {
 			}
 			const from = initial ? 0 : offset;
 			const to = from + PAGE_SIZE - 1;
-			const { data, error, count } = await baseQuery().range(from, to);
+			// 初回のみ count=exact、以降はcountなしで軽量化
+			const { data, error, count } = await baseQuery(initial).range(from, to);
 			if (error) throw error;
 			if (initial) {
 				setRows(data || []);
