@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 const BUCKET = 'tomomi-photos';
@@ -18,6 +19,16 @@ type PhotoRow = {
 
 export default function PhotoGrid() {
 	const [rows, setRows] = useState<PhotoRow[]>([]);
+	// rows から導出される重い値（publicUrl, 日付フォーマット）は rows 変更時のみ計算
+	const derivedRows = useMemo(() => {
+		return rows.map(r => {
+			const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(r.path);
+			const url = urlData.publicUrl;
+			const date = new Date(r.uploaded_at);
+			const formatted = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+			return { ...r, _publicUrl: url, _formatted: formatted };
+		});
+	}, [rows]);
 	const [total, setTotal] = useState<number | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [loadingMore, setLoadingMore] = useState(false);
@@ -233,10 +244,6 @@ export default function PhotoGrid() {
 	};
 
 	const onBulkDownload = async () => {
-		if (!userId) {
-			alert('ダウンロードはログイン後にご利用ください。');
-			return;
-		}
 		if (isMobile) {
 			alert('スマホでは写真を長押しして保存してください。');
 			return;
@@ -411,10 +418,6 @@ export default function PhotoGrid() {
 
 	const onModalDownload = async () => {
 		if (!modalPhoto) return;
-		if (!userId) {
-			alert('ダウンロードはログイン後にご利用ください。');
-			return;
-		}
 		try {
 			const filename = modalPhoto.path.split('/').pop() || `${modalPhoto.id}.jpg`;
 			await downloadBlob(modalPhoto.url, filename);
@@ -455,13 +458,7 @@ export default function PhotoGrid() {
 				</select>
 				{/* アクション行 */}
 				<div style={{ flexBasis: '100%', height: 0 }} />
-				{isMobile ? (
-					userId ? (
-						<span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>スマホは写真を長押しで保存</span>
-					) : (
-						<span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>ログインすると保存できます</span>
-					)
-				) : userId ? (
+				{!isMobile && (
 					<button
 						className="btn"
 						type="button"
@@ -470,8 +467,6 @@ export default function PhotoGrid() {
 					>
 						{bulkDownloading ? 'ダウンロード中...' : `ダウンロード (${selectedIds.size})`}
 					</button>
-				) : (
-					<span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>ログインするとダウンロードできます</span>
 				)}
 				{canUseFavorite && (
 					<>
@@ -497,80 +492,31 @@ export default function PhotoGrid() {
 				<div className="muted">該当する写真がありません。</div>
 			) : (
 				<div className="grid">
-					{rows.map((row) => {
-						const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(row.path);
-						const url = urlData.publicUrl;
-						const date = new Date(row.uploaded_at);
-						const formatted = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-						const canDelete = userId && userId === row.uploader_id;
+					{derivedRows.map((row) => {
+						const url = (row as any)._publicUrl as string;
+						const formatted = (row as any)._formatted as string;
+						const canDelete = !!(userId && userId === row.uploader_id);
 						const isFavoritedForCurrentUser = canUseFavorite && (
 							(userName === 'Rody with Lucy' && !!row.favorite_rody_with_lucy) ||
 							(userName === '佐藤健二' && !!row.favorite_kenji_sato)
 						);
+						const showCheckbox = ((!isMobile) || (isMobile && canUseFavorite));
 						return (
-							<figure key={row.id} className="photo" style={{ position: 'relative' }}>
-								<img
-									src={url}
-									alt={row.path}
-									onClick={() => onImageClick(row)}
-									style={{ cursor: 'zoom-in' }}
-								/>
-								<figcaption>
-									<div className="photo-meta">
-										<span className="uploader">{row.uploader_name}</span>
-										<span className="date">{formatted}</span>
-									</div>
-									{canDelete && (
-										<div className="row" style={{ justifyContent: 'flex-end' }}>
-											<button
-												type="button"
-												className="btn"
-												onClick={(e) => { e.stopPropagation(); onDelete(row); }}
-												disabled={deletingIds.has(row.id)}
-											>
-												{deletingIds.has(row.id) ? '削除中...' : '削除'}
-											</button>
-										</div>
-									)}
-								</figcaption>
-								{/* 共通チェックボックス */}
-								<input
-									type="checkbox"
-									checked={selectedIds.has(row.id)}
-									onChange={(e) => { e.stopPropagation(); toggleSelect(row); }}
-									aria-label="この写真を選択"
-									style={{
-										position: 'absolute',
-										top: 6,
-										left: 6,
-										width: 18,
-										height: 18
-									}}
-								/>
-								{/* 特別ユーザー時のみ、自分がお気に入りにした写真に[favorite]マーク */}
-								{isFavoritedForCurrentUser && (
-									<button
-										type="button"
-										onClick={(e) => { e.stopPropagation(); onUnfavorite(row); }}
-										aria-label="お気に入りを解除"
-										style={{
-											position: 'absolute',
-											top: 6,
-											right: 6,
-											background: '#f5a623',
-											color: '#fff',
-											fontSize: 10,
-											padding: '2px 6px',
-											borderRadius: 10,
-											border: 'none',
-											cursor: 'pointer',
-											boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-										}}
-									>
-										favorite
-									</button>
-								)}
-							</figure>
+							<PhotoItem
+								key={row.id}
+								row={row}
+								url={url}
+								formatted={formatted}
+								canDelete={canDelete}
+								isFavorited={isFavoritedForCurrentUser}
+								selected={selectedIds.has(row.id)}
+								deleting={deletingIds.has(row.id)}
+								showCheckbox={showCheckbox}
+								onImageClick={onImageClick}
+								onDelete={onDelete}
+								onToggleSelect={toggleSelect}
+								onUnfavorite={onUnfavorite}
+							/>
 						);
 					})}
 				</div>
@@ -617,20 +563,18 @@ export default function PhotoGrid() {
 							alt={modalPhoto.path}
 							style={{ maxWidth: '86vw', maxHeight: '78vh', objectFit: 'contain' }}
 						/>
-						<div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+						<div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
 							{isMobile ? (
-								userId ? (
-									<span className="muted" style={{ fontSize: 12 }}>長押しで保存できます</span>
-								) : (
-									<span className="muted" style={{ fontSize: 12 }}>ログインすると保存できます</span>
-								)
+								<span className="muted" style={{ fontSize: 12 }}>長押しで保存できます</span>
 							) : (
 								<span />
 							)}
-							{!isMobile && userId && (
-								<button className="btn" type="button" onClick={onModalDownload}>ダウンロード</button>
-							)}
-							<button className="btn" type="button" onClick={closeModal}>閉じる</button>
+							<div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+								{!isMobile && (
+									<button className="btn" type="button" onClick={onModalDownload}>ダウンロード</button>
+								)}
+								<button className="btn" type="button" onClick={closeModal}>閉じる</button>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -639,4 +583,112 @@ export default function PhotoGrid() {
 	);
 }
 
+
+type PhotoItemProps = {
+	row: PhotoRow;
+	url: string;
+	formatted: string;
+	canDelete: boolean;
+	isFavorited: boolean;
+	selected: boolean;
+	deleting: boolean;
+	showCheckbox: boolean;
+	onImageClick: (row: PhotoRow) => void;
+	onDelete: (row: PhotoRow) => void;
+	onToggleSelect: (row: PhotoRow) => void;
+	onUnfavorite: (row: PhotoRow) => void;
+};
+
+const PhotoItem = React.memo<PhotoItemProps>(function PhotoItem({
+	row,
+	url,
+	formatted,
+	canDelete,
+	isFavorited,
+	selected,
+	deleting,
+	showCheckbox,
+	onImageClick,
+	onDelete,
+	onToggleSelect,
+	onUnfavorite
+}: PhotoItemProps) {
+	return (
+		<figure className="photo" style={{ position: 'relative' }}>
+			<img
+				src={url}
+				alt={row.path}
+				onClick={() => onImageClick(row)}
+				style={{ cursor: 'zoom-in' }}
+			/>
+			<figcaption>
+				<div className="photo-meta">
+					<span className="uploader">{row.uploader_name}</span>
+					<span className="date">{formatted}</span>
+				</div>
+				{canDelete && (
+					<div className="row" style={{ justifyContent: 'flex-end' }}>
+						<button
+							type="button"
+							className="btn"
+							onClick={(e) => { e.stopPropagation(); onDelete(row); }}
+							disabled={deleting}
+						>
+							{deleting ? '削除中...' : '削除'}
+						</button>
+					</div>
+				)}
+			</figcaption>
+			{showCheckbox && (
+				<input
+					type="checkbox"
+					checked={selected}
+					onChange={(e) => { e.stopPropagation(); onToggleSelect(row); }}
+					aria-label="この写真を選択"
+					style={{
+						position: 'absolute',
+						top: 6,
+						left: 6,
+						width: 18,
+						height: 18
+					}}
+				/>
+			)}
+			{isFavorited && (
+				<button
+					type="button"
+					onClick={(e) => { e.stopPropagation(); onUnfavorite(row); }}
+					aria-label="お気に入りを解除"
+					style={{
+						position: 'absolute',
+						top: 6,
+						right: 6,
+						background: '#f5a623',
+						color: '#fff',
+						fontSize: 10,
+						padding: '2px 6px',
+						borderRadius: 10,
+						border: 'none',
+						cursor: 'pointer',
+						boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+					}}
+				>
+					favorite
+				</button>
+			)}
+		</figure>
+	);
+}, (prev: PhotoItemProps, next: PhotoItemProps) => {
+	return (
+		prev.selected === next.selected &&
+		prev.deleting === next.deleting &&
+		prev.isFavorited === next.isFavorited &&
+		prev.canDelete === next.canDelete &&
+		prev.url === next.url &&
+		prev.formatted === next.formatted &&
+		prev.showCheckbox === next.showCheckbox &&
+		prev.row.id === next.row.id &&
+		prev.row.uploader_name === next.row.uploader_name
+	);
+});
 
