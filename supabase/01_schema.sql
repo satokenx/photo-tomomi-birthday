@@ -31,6 +31,22 @@ with check (auth.uid() = uploader_id);
 -- Helpful index for ordering by date
 create index if not exists photos_uploaded_at_idx on public.photos (uploaded_at desc);
 
+-- Favorite flags for specific users
+alter table public.photos
+add column if not exists favorite_rody_with_lucy boolean not null default false;
+
+alter table public.photos
+add column if not exists favorite_kenji_sato boolean not null default false;
+
+-- Allow authenticated users to update (used for favorite flags)
+drop policy if exists "Authenticated update photos" on public.photos;
+create policy "Authenticated update photos"
+on public.photos
+for update
+to authenticated
+using (true)
+with check (true);
+
 -- Allow uploader to delete own photo rows
 drop policy if exists "Authenticated delete own photos" on public.photos;
 create policy "Authenticated delete own photos"

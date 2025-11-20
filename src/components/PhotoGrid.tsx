@@ -12,6 +12,8 @@ type PhotoRow = {
 	uploader_id: string;
 	uploader_name: string;
 	uploaded_at: string;
+	favorite_rody_with_lucy?: boolean;
+	favorite_kenji_sato?: boolean;
 };
 
 export default function PhotoGrid() {
@@ -30,16 +32,46 @@ export default function PhotoGrid() {
 	const [uploaderOptions, setUploaderOptions] = useState<string[]>([]);
 	const [optionsLoading, setOptionsLoading] = useState<boolean>(true);
 	const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+	// 共通選択
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 	const [bulkDeleting, setBulkDeleting] = useState(false);
+	// ダウンロード進行状態
+	const [bulkDownloading, setBulkDownloading] = useState(false);
+	// 拡大モーダル
+	const [modalPhoto, setModalPhoto] = useState<{ id: string; url: string; path: string } | null>(null);
+	// お気に入り（限定ユーザー）
+	const [userName, setUserName] = useState<string | null>(null);
+	// モードは廃止（常時チェック可能、両ボタン同時利用可）
+	const [favoriteSaving, setFavoriteSaving] = useState(false);
+	const favoriteAllowedNames = useMemo(() => ['Rody with Lucy', '佐藤健二'], []);
+	const canUseFavorite = useMemo(() => {
+		const n = (userName ?? '').trim();
+		return favoriteAllowedNames.includes(n);
+	}, [userName, favoriteAllowedNames]);
+	const favoriteCount = useMemo(() => {
+		if (!canUseFavorite) return 0;
+		if (userName === 'Rody with Lucy') {
+			return rows.filter(r => !!r.favorite_rody_with_lucy).length;
+		}
+		if (userName === '佐藤健二') {
+			return rows.filter(r => !!r.favorite_kenji_sato).length;
+		}
+		return 0;
+	}, [rows, canUseFavorite, userName]);
 
 	useEffect(() => {
 		let mounted = true;
 		supabase.auth.getUser().then(({ data }) => {
 			if (mounted) setUserId(data.user?.id ?? null);
+			const meta = data.user?.user_metadata as any;
+			const dn = (meta?.name ?? meta?.full_name ?? meta?.display_name ?? data.user?.email ?? '').trim();
+			if (mounted) setUserName(dn || null);
 		});
 		const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
 			setUserId(session?.user?.id ?? null);
+			const meta = session?.user?.user_metadata as any;
+			const dn = (meta?.name ?? meta?.full_name ?? meta?.display_name ?? session?.user?.email ?? '').trim();
+			setUserName(dn || null);
 		});
 		return () => {
 			mounted = false;
@@ -51,7 +83,7 @@ export default function PhotoGrid() {
 	const baseQuery = useCallback((includeCount: boolean) => {
 		let q = supabase
 			.from('photos')
-			.select('id, path, uploader_id, uploader_name, uploaded_at', includeCount ? { count: 'exact' } as any : {} as any);
+			.select('id, path, uploader_id, uploader_name, uploaded_at, favorite_rody_with_lucy, favorite_kenji_sato', includeCount ? { count: 'exact' } as any : {} as any);
 
 		// apply search
 		if (appliedSearch.trim()) {
@@ -151,13 +183,7 @@ export default function PhotoGrid() {
 		e.preventDefault();
 		// No-op: selection changeで即適用
 	};
-	const onClearSearch = () => {
-		setSearch('');
-		setAppliedSearch('');
-		setOffset(0);
-		setRows([]);
-		setHasMore(true);
-	};
+	// 以前の「条件解除」ボタンは仕様変更により廃止
 
 	const onSelectChange = (value: string) => {
 		setSearch(value);
@@ -175,13 +201,59 @@ export default function PhotoGrid() {
 	};
 
 	const toggleSelect = (row: PhotoRow) => {
-		if (!userId || userId !== row.uploader_id) return;
 		setSelectedIds(prev => {
 			const n = new Set(prev);
 			if (n.has(row.id)) n.delete(row.id);
 			else n.add(row.id);
 			return n;
 		});
+	};
+
+	// ダウンロード選択モードは廃止（常時選択された写真に対して実行）
+
+	const downloadBlob = async (url: string, filename: string) => {
+		const res = await fetch(url);
+		if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+		const blob = await res.blob();
+		const objectUrl = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = objectUrl;
+		a.download = filename;
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		URL.revokeObjectURL(objectUrl);
+	};
+
+	const onBulkDownload = async () => {
+		if (selectedIds.size === 0) return;
+		const selected = rows.filter(r => selectedIds.has(r.id));
+		if (selected.length === 0) return;
+		let targets = selected;
+		if (selected.length > 30) {
+			alert(`一度にダウンロードできるのは30件までです。先頭30件をダウンロードします。`);
+			targets = selected.slice(0, 30);
+		}
+		setBulkDownloading(true);
+		try {
+			for (const t of targets) {
+				const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(t.path);
+				const publicUrl = urlData.publicUrl;
+				const filename = t.path.split('/').pop() || `${t.id}.jpg`;
+				// 連続ダウンロードはブラウザによって制限されることがあるため逐次実行
+				// 短い待機を入れて失敗率を下げる
+				// eslint-disable-next-line no-await-in-loop
+				await downloadBlob(publicUrl, filename);
+				// eslint-disable-next-line no-await-in-loop
+				await new Promise(r => setTimeout(r, 100));
+			}
+			alert('ダウンロードが完了しました');
+			setSelectedIds(new Set());
+		} catch (e: any) {
+			alert(`ダウンロードに失敗しました: ${e?.message ?? 'Unknown error'}`);
+		} finally {
+			setBulkDownloading(false);
+		}
 	};
 
 	const bulkDelete = async () => {
@@ -216,8 +288,68 @@ export default function PhotoGrid() {
 		}
 	};
 
+	// お気に入り選択モードは廃止（常時選択された写真に対して実行）
+
+	const onFavoriteSave = async () => {
+		if (!canUseFavorite || selectedIds.size === 0) return;
+		const columnName =
+			(userName === 'Rody with Lucy')
+				? 'favorite_rody_with_lucy'
+				: (userName === '佐藤健二')
+					? 'favorite_kenji_sato'
+					: null;
+		if (!columnName) return;
+		const ids = Array.from(selectedIds);
+		setFavoriteSaving(true);
+		try {
+			const { error } = await supabase.from('photos')
+				.update({ [columnName]: true } as any)
+				.in('id', ids);
+			if (error) throw error;
+			setRows(prev => prev.map(r => {
+				if (selectedIds.has(r.id)) {
+					return { ...r, [columnName]: true } as PhotoRow;
+				}
+				return r;
+			}));
+			setSelectedIds(new Set());
+			alert('お気に入りに保存しました');
+		} catch (e: any) {
+			alert(`お気に入り保存に失敗しました: ${e?.message ?? 'Unknown error'}`);
+		} finally {
+			setFavoriteSaving(false);
+		}
+	};
+
 	const onLoadMore = async () => {
 		await fetchPage(false);
+	};
+
+	const onUnfavorite = async (row: PhotoRow) => {
+		if (!canUseFavorite) return;
+		const columnName =
+			(userName === 'Rody with Lucy')
+				? 'favorite_rody_with_lucy'
+				: (userName === '佐藤健二')
+					? 'favorite_kenji_sato'
+					: null;
+		if (!columnName) return;
+		if (!confirm('この写真のお気に入りを解除しますか？')) return;
+		try {
+			const { error } = await supabase.from('photos')
+				.update({ [columnName]: false } as any)
+				.eq('id', row.id);
+			if (error) throw error;
+			setRows(prev => prev.map(r => {
+				if (r.id === row.id) {
+					return { ...r, [columnName]: false } as PhotoRow;
+				}
+				return r;
+			}));
+			alert('お気に入りを解除しました');
+		} catch (e: any) {
+			alert(`お気に入り解除に失敗しました: ${e?.message ?? 'Unknown error'}`);
+		}
 	};
 
 	const onDelete = async (row: PhotoRow) => {
@@ -254,6 +386,24 @@ export default function PhotoGrid() {
 		});
 	};
 
+	const onImageClick = (row: PhotoRow) => {
+		const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(row.path);
+		const url = urlData.publicUrl;
+		setModalPhoto({ id: row.id, url, path: row.path });
+	};
+
+	const closeModal = () => setModalPhoto(null);
+
+	const onModalDownload = async () => {
+		if (!modalPhoto) return;
+		try {
+			const filename = modalPhoto.path.split('/').pop() || `${modalPhoto.id}.jpg`;
+			await downloadBlob(modalPhoto.url, filename);
+		} catch (e: any) {
+			alert(`ダウンロードに失敗しました: ${e?.message ?? 'Unknown error'}`);
+		}
+	};
+
 	if (loading && rows.length === 0) return <div className="muted">読み込み中...</div>;
 	if (error) return <div className="muted">読み込みエラー: {error}</div>;
 	// show header & search even if no rows so that filter can be cleared
@@ -284,15 +434,35 @@ export default function PhotoGrid() {
 					<option value="date_desc">日付（新しい順）</option>
 					<option value="date_asc">日付（古い順）</option>
 				</select>
+				{/* アクション行 */}
+				<div style={{ flexBasis: '100%', height: 0 }} />
 				<button
 					className="btn"
 					type="button"
-					onClick={bulkDelete}
-					disabled={selectedIds.size === 0 || bulkDeleting}
+					onClick={onBulkDownload}
+					disabled={selectedIds.size === 0 || bulkDownloading}
 				>
-					{bulkDeleting ? '削除中...' : `選択削除 (${selectedIds.size})`}
+					{bulkDownloading ? 'ダウンロード中...' : `ダウンロード (${selectedIds.size})`}
 				</button>
-				<button className="btn" type="button" onClick={onClearSearch}>条件解除</button>
+				{canUseFavorite && (
+					<>
+						<button
+							className="btn"
+							type="button"
+							onClick={onFavoriteSave}
+							disabled={selectedIds.size === 0 || favoriteSaving}
+						>
+							{favoriteSaving ? '保存中...' : `お気に入り保存 (${selectedIds.size})`}
+						</button>
+						<span
+							className="muted"
+							style={{ marginLeft: 6, fontSize: 11, whiteSpace: 'nowrap' }}
+							aria-label="現在のお気に入り件数"
+						>
+							お気に入り{favoriteCount}件
+						</span>
+					</>
+				)}
 			</form>
 			{(rows.length === 0 && !loading) ? (
 				<div className="muted">該当する写真がありません。</div>
@@ -304,9 +474,18 @@ export default function PhotoGrid() {
 						const date = new Date(row.uploaded_at);
 						const formatted = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 						const canDelete = userId && userId === row.uploader_id;
+						const isFavoritedForCurrentUser = canUseFavorite && (
+							(userName === 'Rody with Lucy' && !!row.favorite_rody_with_lucy) ||
+							(userName === '佐藤健二' && !!row.favorite_kenji_sato)
+						);
 						return (
 							<figure key={row.id} className="photo" style={{ position: 'relative' }}>
-								<img src={url} alt={row.path} />
+								<img
+									src={url}
+									alt={row.path}
+									onClick={() => onImageClick(row)}
+									style={{ cursor: 'zoom-in' }}
+								/>
 								<figcaption>
 									<div className="photo-meta">
 										<span className="uploader">{row.uploader_name}</span>
@@ -317,7 +496,7 @@ export default function PhotoGrid() {
 											<button
 												type="button"
 												className="btn"
-												onClick={() => onDelete(row)}
+												onClick={(e) => { e.stopPropagation(); onDelete(row); }}
 												disabled={deletingIds.has(row.id)}
 											>
 												{deletingIds.has(row.id) ? '削除中...' : '削除'}
@@ -325,20 +504,42 @@ export default function PhotoGrid() {
 										</div>
 									)}
 								</figcaption>
-								{canDelete && (
-									<input
-										type="checkbox"
-										checked={selectedIds.has(row.id)}
-										onChange={() => toggleSelect(row)}
-										aria-label="この写真を選択"
+								{/* 共通チェックボックス */}
+								<input
+									type="checkbox"
+									checked={selectedIds.has(row.id)}
+									onChange={(e) => { e.stopPropagation(); toggleSelect(row); }}
+									aria-label="この写真を選択"
+									style={{
+										position: 'absolute',
+										top: 6,
+										left: 6,
+										width: 18,
+										height: 18
+									}}
+								/>
+								{/* 特別ユーザー時のみ、自分がお気に入りにした写真に[favorite]マーク */}
+								{isFavoritedForCurrentUser && (
+									<button
+										type="button"
+										onClick={(e) => { e.stopPropagation(); onUnfavorite(row); }}
+										aria-label="お気に入りを解除"
 										style={{
 											position: 'absolute',
 											top: 6,
-											left: 6,
-											width: 18,
-											height: 18
+											right: 6,
+											background: '#f5a623',
+											color: '#fff',
+											fontSize: 10,
+											padding: '2px 6px',
+											borderRadius: 10,
+											border: 'none',
+											cursor: 'pointer',
+											boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
 										}}
-									/>
+									>
+										favorite
+									</button>
 								)}
 							</figure>
 						);
@@ -350,6 +551,48 @@ export default function PhotoGrid() {
 					<button className="btn" type="button" onClick={onLoadMore} disabled={loadingMore}>
 						{loadingMore ? '読み込み中...' : 'さらに表示'}
 					</button>
+				</div>
+			)}
+
+			{modalPhoto && (
+				<div
+					role="dialog"
+					aria-modal="true"
+					aria-label="写真を拡大表示"
+					onClick={closeModal}
+					style={{
+						position: 'fixed',
+						inset: 0,
+						background: 'rgba(0,0,0,0.75)',
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						zIndex: 1000,
+						padding: 12
+					}}
+				>
+					<div
+						onClick={(e) => e.stopPropagation()}
+						style={{
+							background: '#111',
+							borderRadius: 8,
+							maxWidth: '90vw',
+							maxHeight: '90vh',
+							display: 'grid',
+							gap: 8,
+							padding: 8
+						}}
+					>
+						<img
+							src={modalPhoto.url}
+							alt={modalPhoto.path}
+							style={{ maxWidth: '86vw', maxHeight: '78vh', objectFit: 'contain' }}
+						/>
+						<div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+							<button className="btn" type="button" onClick={onModalDownload}>ダウンロード</button>
+							<button className="btn" type="button" onClick={closeModal}>閉じる</button>
+						</div>
+					</div>
 				</div>
 			)}
 		</div>
