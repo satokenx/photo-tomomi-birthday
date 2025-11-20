@@ -48,6 +48,13 @@ export default function PhotoGrid() {
 		const n = (userName ?? '').trim();
 		return favoriteAllowedNames.includes(n);
 	}, [userName, favoriteAllowedNames]);
+	const [isMobile, setIsMobile] = useState(false);
+	useEffect(() => {
+		if (typeof navigator === 'undefined') return;
+		const ua = navigator.userAgent || '';
+		const mobile = /Android.*Mobile|iPhone|iPad|iPod|Windows Phone/i.test(ua);
+		setIsMobile(mobile);
+	}, []);
 	const favoriteCount = useMemo(() => {
 		if (!canUseFavorite) return 0;
 		if (userName === 'Rody with Lucy') {
@@ -226,6 +233,14 @@ export default function PhotoGrid() {
 	};
 
 	const onBulkDownload = async () => {
+		if (!userId) {
+			alert('ダウンロードはログイン後にご利用ください。');
+			return;
+		}
+		if (isMobile) {
+			alert('スマホでは写真を長押しして保存してください。');
+			return;
+		}
 		if (selectedIds.size === 0) return;
 		const selected = rows.filter(r => selectedIds.has(r.id));
 		if (selected.length === 0) return;
@@ -396,6 +411,10 @@ export default function PhotoGrid() {
 
 	const onModalDownload = async () => {
 		if (!modalPhoto) return;
+		if (!userId) {
+			alert('ダウンロードはログイン後にご利用ください。');
+			return;
+		}
 		try {
 			const filename = modalPhoto.path.split('/').pop() || `${modalPhoto.id}.jpg`;
 			await downloadBlob(modalPhoto.url, filename);
@@ -436,14 +455,24 @@ export default function PhotoGrid() {
 				</select>
 				{/* アクション行 */}
 				<div style={{ flexBasis: '100%', height: 0 }} />
-				<button
-					className="btn"
-					type="button"
-					onClick={onBulkDownload}
-					disabled={selectedIds.size === 0 || bulkDownloading}
-				>
-					{bulkDownloading ? 'ダウンロード中...' : `ダウンロード (${selectedIds.size})`}
-				</button>
+				{isMobile ? (
+					userId ? (
+						<span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>スマホは写真を長押しで保存</span>
+					) : (
+						<span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>ログインすると保存できます</span>
+					)
+				) : userId ? (
+					<button
+						className="btn"
+						type="button"
+						onClick={onBulkDownload}
+						disabled={selectedIds.size === 0 || bulkDownloading}
+					>
+						{bulkDownloading ? 'ダウンロード中...' : `ダウンロード (${selectedIds.size})`}
+					</button>
+				) : (
+					<span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>ログインするとダウンロードできます</span>
+				)}
 				{canUseFavorite && (
 					<>
 						<button
@@ -588,8 +617,19 @@ export default function PhotoGrid() {
 							alt={modalPhoto.path}
 							style={{ maxWidth: '86vw', maxHeight: '78vh', objectFit: 'contain' }}
 						/>
-						<div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
-							<button className="btn" type="button" onClick={onModalDownload}>ダウンロード</button>
+						<div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+							{isMobile ? (
+								userId ? (
+									<span className="muted" style={{ fontSize: 12 }}>長押しで保存できます</span>
+								) : (
+									<span className="muted" style={{ fontSize: 12 }}>ログインすると保存できます</span>
+								)
+							) : (
+								<span />
+							)}
+							{!isMobile && userId && (
+								<button className="btn" type="button" onClick={onModalDownload}>ダウンロード</button>
+							)}
 							<button className="btn" type="button" onClick={closeModal}>閉じる</button>
 						</div>
 					</div>
